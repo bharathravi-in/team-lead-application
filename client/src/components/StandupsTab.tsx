@@ -148,6 +148,16 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
     setShowModal(true);
   };
 
+  const handleStartMic = async () => {
+    try {
+      toast.loading('Requesting Microphone Access...', { id: 'mic-toast' });
+      await startListening();
+      toast.success('Microphone Active! Listening to meeting...', { id: 'mic-toast' });
+    } catch (err: any) {
+      toast.error('Failed to start microphone', { id: 'mic-toast' });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPersonId) {
@@ -429,7 +439,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                   ) : (
                     <button
                       type="button"
-                      onClick={startListening}
+                      onClick={handleStartMic}
                       disabled={!speechSupported}
                       className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
                     >
