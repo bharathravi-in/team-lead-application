@@ -112,7 +112,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
     }
   };
 
-  // Auto-parse spoken transcript into task point rows
+  // Intelligent Speech Parser & Category Classifier
   const autoExtractSpeechToPoints = () => {
     const textToExtract = transcript.trim();
     if (!textToExtract) {
@@ -120,30 +120,97 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
       return;
     }
 
-    // Cleanly split transcript by periods, newlines, or sentence transitions
-    const rawChunks = textToExtract
-      .split(/(?:\.|\n|\b(?:and also|next|after that|worked on|need to|check about)\b)/gi)
-      .map(s => s.trim())
-      .filter(s => s.length > 5);
+    // Split into clauses/sentences by punctuation or transition keywords
+    const clauses = textToExtract
+      .split(/(?:\.|\n|\b(?:and also|and then|yesterday|today|for today|blocker|blocked by|will be|going to|worked on|completed|finished)\b)/gi)
+      .map(c => c.trim())
+      .filter(c => c.length > 3);
 
-    // Deduplicate extracted sentences
-    const uniqueChunks = Array.from(new Set(rawChunks));
-    if (uniqueChunks.length === 0) uniqueChunks.push(textToExtract);
+    const extractedYesterday: Array<{ text: string; hours: string }> = [];
+    const extractedToday: Array<{ text: string; hours: string }> = [];
+    const extractedBlockers: string[] = [];
 
-    // Populate Yesterday Task Points (replacing initial empty row #1)
-    setYesterdayPoints(prev => {
-      const existingNonEmpty = prev.filter(p => p.text.trim() !== '');
-      const newItems = uniqueChunks.map((chunkText, idx) => ({
-        id: `y_ext_${Date.now()}_${idx}`,
-        text: chunkText,
-        hours: ''
-      }));
-      return existingNonEmpty.length > 0 ? [...existingNonEmpty, ...newItems] : newItems;
+    clauses.forEach(clause => {
+      // 1. Extract spoken hours if mentioned (e.g. "3 hours", "2.5 hrs")
+      let hours = '';
+      const hoursMatch = clause.match(/(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)\b/i);
+      if (hoursMatch) {
+        hours = hoursMatch[1];
+      }
+
+      // Clean clause text by removing lead filler phrases and hours text
+      let cleanText = clause
+        .replace(/(\d+(?:\.\d+)?)\s*(?:hours|hour|hrs|hr|h)\b/gi, '')
+        .replace(/^(for today|today|yesterday|i will|i'm going to|looking into|worked on|completed|fixed|check|need to)\s+/i, '')
+        .trim();
+
+      if (!cleanText || cleanText.length < 3) return;
+      cleanText = cleanText.charAt(0).toUpperCase() + cleanText.slice(1);
+
+      const lower = clause.toLowerCase();
+
+      // 2. Classify category based on natural language intent
+      const isBlocker = lower.includes('blocker') || lower.includes('blocked') || lower.includes('stuck') || lower.includes('waiting for') || lower.includes('impediment');
+      const isToday = lower.includes('today') || lower.includes('will') || lower.includes('going to') || lower.includes('looking into') || lower.includes('plan to') || lower.includes('focus') || lower.includes('next');
+
+      if (isBlocker) {
+        if (!extractedBlockers.includes(cleanText)) extractedBlockers.push(cleanText);
+      } else if (isToday) {
+        if (!extractedToday.some(item => item.text === cleanText)) {
+          extractedToday.push({ text: cleanText, hours });
+        }
+      } else {
+        if (!extractedYesterday.some(item => item.text === cleanText)) {
+          extractedYesterday.push({ text: cleanText, hours });
+        }
+      }
     });
 
-    // Reset speech transcript stream so it doesn't keep accumulating/re-extracting!
+    // Fallback if no specific clauses matched
+    if (extractedYesterday.length === 0 && extractedToday.length === 0 && extractedBlockers.length === 0) {
+      extractedToday.push({ text: textToExtract, hours: '' });
+    }
+
+    // Update Yesterday Points (fill empty placeholder row #1)
+    if (extractedYesterday.length > 0) {
+      setYesterdayPoints(prev => {
+        const nonBlank = prev.filter(p => p.text.trim() !== '');
+        const newRows = extractedYesterday.map((item, idx) => ({
+          id: `y_smart_${Date.now()}_${idx}`,
+          text: item.text,
+          hours: item.hours
+        }));
+        return nonBlank.length > 0 ? [...nonBlank, ...newRows] : newRows;
+      });
+    }
+
+    // Update Today Points (fill empty placeholder row #1)
+    if (extractedToday.length > 0) {
+      setTodayPoints(prev => {
+        const nonBlank = prev.filter(p => p.text.trim() !== '');
+        const newRows = extractedToday.map((item, idx) => ({
+          id: `t_smart_${Date.now()}_${idx}`,
+          text: item.text,
+          hours: item.hours
+        }));
+        return nonBlank.length > 0 ? [...nonBlank, ...newRows] : newRows;
+      });
+    }
+
+    // Update Blockers text area
+    if (extractedBlockers.length > 0) {
+      setBlockersText(prev => prev ? `${prev}\n• ${extractedBlockers.join('\n• ')}` : `• ${extractedBlockers.join('\n• ')}`);
+    }
+
+    // Clear transcript buffer after extraction
     resetTranscript();
-    toast.success(`Extracted ${uniqueChunks.length} task point(s) & cleared live transcript!`);
+
+    const summaryParts = [];
+    if (extractedYesterday.length > 0) summaryParts.push(`${extractedYesterday.length} Yesterday task(s)`);
+    if (extractedToday.length > 0) summaryParts.push(`${extractedToday.length} Today task(s)`);
+    if (extractedBlockers.length > 0) summaryParts.push(`${extractedBlockers.length} Blocker(s)`);
+
+    toast.success(`Smart Extracted: ${summaryParts.join(', ')}!`);
   };
 
   const openModalForNew = () => {
