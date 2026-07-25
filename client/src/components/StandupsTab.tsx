@@ -114,28 +114,36 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
 
   // Auto-parse spoken transcript into task point rows
   const autoExtractSpeechToPoints = () => {
-    if (!transcript.trim()) {
+    const textToExtract = transcript.trim();
+    if (!textToExtract) {
       toast.error('No spoken transcript available yet. Speak into the mic first!');
       return;
     }
 
-    const sentences = transcript
-      .split(/(?:\.|\n|\b(?:yesterday|today|blocker|completed|worked on)\b)/gi)
+    // Cleanly split transcript by periods, newlines, or sentence transitions
+    const rawChunks = textToExtract
+      .split(/(?:\.|\n|\b(?:and also|next|after that|worked on|need to|check about)\b)/gi)
       .map(s => s.trim())
-      .filter(s => s.length > 3);
+      .filter(s => s.length > 5);
 
-    if (sentences.length === 0) {
-      addPointRow('yesterday', transcript.trim());
-    } else {
-      sentences.forEach((sent, idx) => {
-        if (idx % 2 === 0) {
-          addPointRow('yesterday', sent);
-        } else {
-          addPointRow('today', sent);
-        }
-      });
-    }
-    toast.success(`Extracted ${sentences.length || 1} task points from live meeting transcript!`);
+    // Deduplicate extracted sentences
+    const uniqueChunks = Array.from(new Set(rawChunks));
+    if (uniqueChunks.length === 0) uniqueChunks.push(textToExtract);
+
+    // Populate Yesterday Task Points (replacing initial empty row #1)
+    setYesterdayPoints(prev => {
+      const existingNonEmpty = prev.filter(p => p.text.trim() !== '');
+      const newItems = uniqueChunks.map((chunkText, idx) => ({
+        id: `y_ext_${Date.now()}_${idx}`,
+        text: chunkText,
+        hours: ''
+      }));
+      return existingNonEmpty.length > 0 ? [...existingNonEmpty, ...newItems] : newItems;
+    });
+
+    // Reset speech transcript stream so it doesn't keep accumulating/re-extracting!
+    resetTranscript();
+    toast.success(`Extracted ${uniqueChunks.length} task point(s) & cleared live transcript!`);
   };
 
   const openModalForNew = () => {
@@ -448,14 +456,25 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                   )}
 
                   {transcript && (
-                    <button
-                      type="button"
-                      onClick={autoExtractSpeechToPoints}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow cursor-pointer"
-                      title="Convert spoken transcript into structured task rows"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" /> Extract Speech to Tasks
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={autoExtractSpeechToPoints}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow cursor-pointer"
+                        title="Convert spoken transcript into structured task rows"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> Extract Speech to Tasks
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={resetTranscript}
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Clear current live transcript text"
+                      >
+                        <X className="w-3.5 h-3.5 text-slate-400" /> Clear
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
