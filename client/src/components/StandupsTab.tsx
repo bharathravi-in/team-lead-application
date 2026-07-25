@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import type { Person, Standup } from '../types';
 import toast from 'react-hot-toast';
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { 
   formatStandupHTML, 
   formatStandupPlainText,
@@ -12,7 +13,7 @@ import {
 import { 
   MessageSquare, Calendar, Plus, Copy, Download, 
   AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, 
-  X, FileText, Check, Clock, Trash2
+  X, FileText, Check, Clock, Trash2, Mic, MicOff, Sparkles, Volume2
 } from 'lucide-react';
 
 interface StandupsTabProps {
@@ -47,6 +48,18 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
     { id: 't1', text: '', hours: '' }
   ]);
 
+  // Web Speech API Voice Transcription Hook
+  const {
+    isListening,
+    transcript,
+    interimTranscript,
+    isSupported: speechSupported,
+    startListening,
+    stopListening,
+    resetTranscript,
+    error: speechError
+  } = useSpeechRecognition();
+
   const fetchStandups = useCallback(async () => {
     try {
       setLoading(true);
@@ -71,8 +84,8 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
 
   const finalHoursLogged = manualTotalHours !== '' ? parseFloat(manualTotalHours) || 0 : calculatedHoursSum;
 
-  const addPointRow = (type: 'yesterday' | 'today') => {
-    const newItem: PointItem = { id: Date.now().toString(), text: '', hours: '' };
+  const addPointRow = (type: 'yesterday' | 'today', initialText = '', initialHours = '') => {
+    const newItem: PointItem = { id: Date.now().toString() + Math.random(), text: initialText, hours: initialHours };
     if (type === 'yesterday') {
       setYesterdayPoints(prev => [...prev, newItem]);
     } else {
@@ -99,12 +112,39 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
     }
   };
 
+  // Auto-parse spoken transcript into task point rows
+  const autoExtractSpeechToPoints = () => {
+    if (!transcript.trim()) {
+      toast.error('No spoken transcript available yet. Speak into the mic first!');
+      return;
+    }
+
+    const sentences = transcript
+      .split(/(?:\.|\n|\b(?:yesterday|today|blocker|completed|worked on)\b)/gi)
+      .map(s => s.trim())
+      .filter(s => s.length > 3);
+
+    if (sentences.length === 0) {
+      addPointRow('yesterday', transcript.trim());
+    } else {
+      sentences.forEach((sent, idx) => {
+        if (idx % 2 === 0) {
+          addPointRow('yesterday', sent);
+        } else {
+          addPointRow('today', sent);
+        }
+      });
+    }
+    toast.success(`Extracted ${sentences.length || 1} task points from live meeting transcript!`);
+  };
+
   const openModalForNew = () => {
     if (people.length > 0) setSelectedPersonId(people[0].id);
     setYesterdayPoints([{ id: 'y1', text: '', hours: '' }]);
     setTodayPoints([{ id: 't1', text: '', hours: '' }]);
     setBlockersText('');
     setManualTotalHours('');
+    resetTranscript();
     setShowModal(true);
   };
 
@@ -115,7 +155,6 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
       return;
     }
 
-    // Format yesterday & today text from points
     const yesterdayFormatted = yesterdayPoints
       .filter(p => p.text.trim())
       .map(p => `• ${p.text.trim()}${parseFloat(p.hours) > 0 ? ` (${p.hours} hrs)` : ''}`)
@@ -137,6 +176,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
       });
 
       toast.success('Standup & time log recorded');
+      stopListening();
       setShowModal(false);
       fetchStandups();
     } catch {
@@ -343,18 +383,87 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
         </div>
       )}
 
-      {/* Record Standup Modal with Separate Textbox & Time Inputs */}
+      {/* Record Standup Modal with Live Voice Transcription */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-slate-100">Record Daily Standup & Log Task Times</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-100">Record Daily Standup & Log Task Times</h3>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-bold uppercase">
+                  Live Meeting Voice Ready
+                </span>
+              </div>
               <button 
-                onClick={() => setShowModal(false)}
+                onClick={() => { stopListening(); setShowModal(false); }}
                 className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* LIVE VOICE MEETING LISTENER TOOLBAR */}
+            <div className={`p-4 rounded-xl border transition-all space-y-3 ${
+              isListening 
+                ? 'bg-rose-950/30 border-rose-500/50 shadow-lg shadow-rose-950/40' 
+                : 'bg-slate-950/80 border-slate-800'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-3 h-3 rounded-full ${isListening ? 'bg-rose-500 animate-ping' : 'bg-slate-600'}`} />
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <Volume2 className={`w-4 h-4 ${isListening ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`} />
+                    {isListening ? '🎙️ Meeting Listener Active — Transcribing Speech Live...' : 'Turn On Live Meeting Mic Transcription'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {isListening ? (
+                    <button
+                      type="button"
+                      onClick={stopListening}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow cursor-pointer"
+                    >
+                      <MicOff className="w-3.5 h-3.5" /> Stop Mic
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={startListening}
+                      disabled={!speechSupported}
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
+                    >
+                      <Mic className="w-3.5 h-3.5" /> Start Mic Listener
+                    </button>
+                  )}
+
+                  {transcript && (
+                    <button
+                      type="button"
+                      onClick={autoExtractSpeechToPoints}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow cursor-pointer"
+                      title="Convert spoken transcript into structured task rows"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Extract Speech to Tasks
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Speech Error or Not Supported alert */}
+              {speechError && (
+                <p className="text-xs text-rose-400 font-medium">{speechError}</p>
+              )}
+
+              {/* Live Transcript Display Box */}
+              {(transcript || interimTranscript || isListening) && (
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Live Transcript Stream:</span>
+                  <p className="text-slate-200 font-sans leading-relaxed">
+                    {transcript} <span className="text-slate-400 italic">{interimTranscript}</span>
+                  </p>
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -508,7 +617,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { stopListening(); setShowModal(false); }}
                   className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200"
                 >
                   Cancel

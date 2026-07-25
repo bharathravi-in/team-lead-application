@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import FeaturesPage from './pages/FeaturesPage';
 import FeatureDetailPage from './pages/FeatureDetailPage';
 import PeopleDirectoryPage from './pages/PeopleDirectoryPage';
+import PlanningPage from './pages/PlanningPage';
 import type { JSX } from 'react';
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
@@ -36,6 +37,7 @@ function AppRoutes() {
         <Route index element={<Navigate to="/features" replace />} />
         <Route path="features" element={<FeaturesPage />} />
         <Route path="features/:id" element={<FeatureDetailPage />} />
+        <Route path="planning" element={<PlanningPage />} />
         <Route path="people" element={<PeopleDirectoryPage />} />
       </Route>
     </Routes>

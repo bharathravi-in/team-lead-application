@@ -2,7 +2,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   Rocket, Layers, Users, LogOut, Search, 
-  Sparkles, ShieldCheck
+  Sparkles, ShieldCheck, Compass
 } from 'lucide-react';
 
 const Layout = () => {
@@ -42,13 +42,26 @@ const Layout = () => {
             to="/features"
             className={({ isActive }) => `
               flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200
-              ${isActive || location.pathname.startsWith('/features') 
+              ${isActive || (location.pathname.startsWith('/features') && !location.pathname.startsWith('/planning'))
                 ? 'bg-indigo-600/15 text-indigo-300 border border-indigo-500/30 shadow-sm font-semibold' 
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}
             `}
           >
             <Layers className="w-4 h-4 text-indigo-400" />
             <span>Features</span>
+          </NavLink>
+
+          <NavLink
+            to="/planning"
+            className={({ isActive }) => `
+              flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200
+              ${isActive || location.pathname.startsWith('/planning') 
+                ? 'bg-indigo-600/15 text-indigo-300 border border-indigo-500/30 shadow-sm font-semibold' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'}
+            `}
+          >
+            <Compass className="w-4 h-4 text-amber-400" />
+            <span>Sprint Planning</span>
           </NavLink>
 
           <NavLink
