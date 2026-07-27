@@ -19,6 +19,21 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
+// Middleware to normalize Netlify serverless function URLs
+app.use((req, _res, next) => {
+  if (req.url.startsWith('/.netlify/functions/api')) {
+    req.url = req.url.replace('/.netlify/functions/api', '') || '/';
+  }
+  if (!req.url.startsWith('/api') && req.url !== '/') {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
+// Root & Health check routes
+app.get('/', (_, res) => res.json({ status: 'ok', message: 'Tech Lead Hub API Serverless Active', timestamp: new Date().toISOString() }));
+app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/people', globalPeopleRoutes);
@@ -28,9 +43,6 @@ app.use('/api/features/:featureId/people/:personId/checklists', checklistRoutes)
 app.use('/api/features/:featureId/standups', standupRoutes);
 app.use('/api/features/:featureId/retrospectives', retroRoutes);
 app.use('/api/ai', aiRoutes);
-
-// Health check
-app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 import serverless from 'serverless-http';
 
