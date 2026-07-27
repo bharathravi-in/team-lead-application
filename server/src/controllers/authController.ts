@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../db/connection';
 import { AuthenticatedRequest } from '../middleware/auth';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'tech-lead-jwt-secret-key-2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_key';
 
 export const register = async (req: AuthenticatedRequest, res: Response) => {
   try {
