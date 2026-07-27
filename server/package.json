@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
+    "build": "tsc && (cp public/_redirects dist/_redirects || copy public\\_redirects dist\\_redirects || true)",
     "start": "node dist/index.js",
     "db:init": "ts-node src/db/init.ts"
   },
