@@ -32,8 +32,13 @@ app.use('/api/ai', aiRoutes);
 // Health check
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-app.listen(PORT, () => {
-  console.log(`🚀 Tech Lead API running on http://localhost:${PORT}`);
-});
+import serverless from 'serverless-http';
 
+if (process.env.NODE_ENV !== 'production' || !process.env.NETLIFY) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Tech Lead API running on http://localhost:${PORT}`);
+  });
+}
+
+export const handler = serverless(app);
 export default app;
