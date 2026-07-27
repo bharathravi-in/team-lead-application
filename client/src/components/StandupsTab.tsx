@@ -69,8 +69,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
     isSupported: speechSupported,
     startListening,
     stopListening,
-    resetTranscript,
-    error: speechError
+    resetTranscript
   } = useSpeechRecognition();
 
   const fetchStandups = useCallback(async () => {
@@ -109,7 +108,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
   };
 
   // Keyboard shortcut handler to add new task point on Enter press
-  const handleKeyDownAddRow = (e: React.KeyboardEvent, type: 'yesterday' | 'today', index: number) => {
+  const handleKeyDownAddRow = (e: React.KeyboardEvent, type: 'yesterday' | 'today') => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const nextId = addPointRow(type);
@@ -178,7 +177,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
   // AI PARSER INTEGRATION (Google Gemini 1.5 Flash API)
   // -------------------------------------------------------------
   const parseWithGeminiAI = async (textInput?: string, audioBase64?: string, mimeType?: string) => {
-    if (!geminiKey && !process.env.REACT_APP_GEMINI_API_KEY) {
+    if (!geminiKey && !(import.meta.env as any).VITE_GEMINI_API_KEY) {
       setShowKeyModal(true);
       return;
     }
@@ -803,7 +802,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                         placeholder="Task description (e.g. Created OAuth2 login UI) — press Enter to add next task"
                         value={p.text}
                         onChange={(e) => updatePointRow('yesterday', p.id, 'text', e.target.value)}
-                        onKeyDown={(e) => handleKeyDownAddRow(e, 'yesterday', idx)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'yesterday')}
                         className="glass-input flex-1 px-3 py-2 rounded-xl text-xs"
                       />
                       <input
@@ -813,7 +812,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                         placeholder="Hours (e.g. 3.5)"
                         value={p.hours}
                         onChange={(e) => updatePointRow('yesterday', p.id, 'hours', e.target.value)}
-                        onKeyDown={(e) => handleKeyDownAddRow(e, 'yesterday', idx)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'yesterday')}
                         className="glass-input w-28 px-3 py-2 rounded-xl text-xs text-emerald-400 font-semibold"
                         title="Hours spent on this specific task"
                       />
@@ -861,7 +860,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                         placeholder="Planned task (e.g. Implement refresh tokens) — press Enter to add next task"
                         value={p.text}
                         onChange={(e) => updatePointRow('today', p.id, 'text', e.target.value)}
-                        onKeyDown={(e) => handleKeyDownAddRow(e, 'today', idx)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'today')}
                         className="glass-input flex-1 px-3 py-2 rounded-xl text-xs"
                       />
                       <input
@@ -871,7 +870,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                         placeholder="Hours (e.g. 2.5)"
                         value={p.hours}
                         onChange={(e) => updatePointRow('today', p.id, 'hours', e.target.value)}
-                        onKeyDown={(e) => handleKeyDownAddRow(e, 'today', idx)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'today')}
                         className="glass-input w-28 px-3 py-2 rounded-xl text-xs text-sky-400 font-semibold"
                         title="Estimated hours for this planned task"
                       />

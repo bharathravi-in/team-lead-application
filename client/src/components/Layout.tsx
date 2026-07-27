@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Rocket, Layers, Users, LogOut, Search, 
+  Rocket, Layers, Users, LogOut, 
   Sparkles, ShieldCheck, Compass
 } from 'lucide-react';
 

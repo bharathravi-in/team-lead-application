@@ -2,16 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import type { Feature } from '../types';
 import toast from 'react-hot-toast';
-import { 
-  Compass, Calendar, Clock, Users, CheckSquare, 
-  AlertCircle, ChevronRight, Plus, Sparkles, Filter 
-} from 'lucide-react';
+import { Compass, Clock, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const PlanningPage = () => {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const fetchFeatures = useCallback(async () => {
     try {
