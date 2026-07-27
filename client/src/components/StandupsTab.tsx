@@ -13,7 +13,7 @@ import {
 import { 
   MessageSquare, Calendar, Plus, Copy, Download, 
   AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, 
-  X, FileText, Check, Clock, Trash2, Mic, MicOff, Sparkles, Volume2, Key
+  X, FileText, Check, Clock, Trash2, Mic, MicOff, Sparkles, Volume2, Key, CornerDownLeft
 } from 'lucide-react';
 
 interface StandupsTabProps {
@@ -55,8 +55,11 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
 
   // MediaRecorder for Raw Audio Recording (Gemini Audio STT)
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [audioVolumeBars, setAudioVolumeBars] = useState<number[]>([15, 30, 45, 20, 60, 35, 10, 25]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const animFrameRef = useRef<number | null>(null);
 
   // Web Speech API Voice Transcription Hook
   const {
@@ -95,11 +98,25 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
   const finalHoursLogged = manualTotalHours !== '' ? parseFloat(manualTotalHours) || 0 : calculatedHoursSum;
 
   const addPointRow = (type: 'yesterday' | 'today', initialText = '', initialHours = '') => {
-    const newItem: PointItem = { id: Date.now().toString() + Math.random(), text: initialText, hours: initialHours };
+    const newId = `pt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    const newItem: PointItem = { id: newId, text: initialText, hours: initialHours };
     if (type === 'yesterday') {
       setYesterdayPoints(prev => [...prev, newItem]);
     } else {
       setTodayPoints(prev => [...prev, newItem]);
+    }
+    return newId;
+  };
+
+  // Keyboard shortcut handler to add new task point on Enter press
+  const handleKeyDownAddRow = (e: React.KeyboardEvent, type: 'yesterday' | 'today', index: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const nextId = addPointRow(type);
+      setTimeout(() => {
+        const nextInput = document.getElementById(`${type}-input-${nextId}`);
+        if (nextInput) nextInput.focus();
+      }, 50);
     }
   };
 
@@ -122,6 +139,41 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
     }
   };
 
+  // Live Audio Equalizer Meter Animation
+  const startAudioMeter = (stream: MediaStream) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      audioContextRef.current = audioCtx;
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 32;
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const updateMeter = () => {
+        analyser.getByteFrequencyData(dataArray);
+        const bars = Array.from(dataArray.slice(0, 8)).map(val => Math.max(12, Math.min(100, (val / 255) * 100)));
+        setAudioVolumeBars(bars);
+        animFrameRef.current = requestAnimationFrame(updateMeter);
+      };
+      updateMeter();
+    } catch {
+      // ignore
+    }
+  };
+
+  const stopAudioMeter = () => {
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+  };
+
   // -------------------------------------------------------------
   // AI PARSER INTEGRATION (Google Gemini 1.5 Flash API)
   // -------------------------------------------------------------
@@ -133,7 +185,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
 
     try {
       setIsAiProcessing(true);
-      toast.loading('Gemini AI analyzing standup audio/text...', { id: 'ai-toast' });
+      toast.loading('Gemini AI analyzing standup audio & text...', { id: 'ai-toast' });
 
       const res = await api.post('/ai/parse-standup', {
         text: textInput,
@@ -178,11 +230,18 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
     }
   };
 
-  // Direct Audio Recording for Gemini 1.5 Flash
+  // Direct Audio Recording for Gemini 1.5 Flash with Live Metering
   const startAudioRecordingForAI = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      startAudioMeter(stream);
+
+      let options = { mimeType: 'audio/webm' };
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        options = { mimeType: 'audio/mp4' };
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, options);
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -190,12 +249,13 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        stopAudioMeter();
+        const audioBlob = new Blob(audioChunksRef.current, { type: options.mimeType });
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = () => {
           const base64Data = (reader.result as string).split(',')[1];
-          parseWithGeminiAI(undefined, base64Data, 'audio/webm');
+          parseWithGeminiAI(undefined, base64Data, options.mimeType);
         };
 
         stream.getTracks().forEach(track => track.stop());
@@ -204,7 +264,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setIsRecordingAudio(true);
-      toast.success('Recording audio for Gemini AI... Speak your standup update!');
+      toast.success('Recording voice for Gemini AI... Speak your standup update!');
     } catch (err) {
       toast.error('Failed to access microphone for AI audio recording');
     }
@@ -225,7 +285,6 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
       return;
     }
 
-    // Try Gemini AI first if key exists!
     if (geminiKey) {
       parseWithGeminiAI(textToExtract);
       return;
@@ -342,6 +401,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
 
       toast.success('Standup & time log recorded');
       stopListening();
+      stopAudioRecordingForAI();
       setShowModal(false);
       fetchStandups();
     } catch {
@@ -556,7 +616,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
         </div>
       )}
 
-      {/* Record Standup Modal with AI Gemini 1.5 Flash Audio Parsing */}
+      {/* Record Standup Modal with AI Gemini 1.5 Flash Audio Parsing & Keyboard Shortcuts */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
@@ -564,7 +624,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-slate-100">Record Daily Standup & Log Task Times</h3>
                 <span className="px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/30 text-[10px] font-bold uppercase flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-purple-400" /> Gemini 1.5 Flash AI Ready
+                  <Sparkles className="w-3 h-3 text-purple-400" /> AI Powered
                 </span>
               </div>
               <button 
@@ -575,14 +635,27 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
               </button>
             </div>
 
-            {/* AI AUDIO & VOICE LISTENER TOOLBAR */}
+            {/* AI AUDIO & VOICE LISTENER TOOLBAR WITH LIVE EQUALIZER BARS */}
             <div className="p-4 rounded-xl border bg-gradient-to-r from-slate-950 via-purple-950/20 to-slate-950 border-purple-500/30 space-y-3 shadow-lg">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-3">
                   <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
                   <span className="text-xs font-bold text-slate-200">
-                    AI Voice-to-Standup Transcriber (Gemini 1.5 Flash)
+                    AI Voice Transcriber (Gemini 1.5 Flash)
                   </span>
+
+                  {/* Audio Volume Wave Meter */}
+                  {isRecordingAudio && (
+                    <div className="flex items-center gap-1 h-5 px-2 bg-purple-950/80 rounded-lg border border-purple-500/40">
+                      {audioVolumeBars.map((h, i) => (
+                        <div
+                          key={i}
+                          className="w-1 bg-purple-400 rounded-full transition-all duration-75"
+                          style={{ height: `${h}%` }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
@@ -654,7 +727,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
               {(transcript || interimTranscript || isListening || isRecordingAudio) && (
                 <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800 text-xs space-y-1">
                   <span className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">
-                    {isRecordingAudio ? '🔴 Recording raw audio for Gemini AI...' : 'Live Speech Transcript:'}
+                    {isRecordingAudio ? '🔴 Recording raw voice audio for Gemini AI...' : 'Live Speech Transcript:'}
                   </span>
                   <p className="text-slate-200 font-sans leading-relaxed">
                     {transcript} <span className="text-slate-400 italic">{interimTranscript}</span>
@@ -703,9 +776,14 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
               {/* Yesterday Itemized Points */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold uppercase text-sky-400">
-                    Yesterday — Individual Tasks Completed & Time
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-xs font-semibold uppercase text-sky-400">
+                      Yesterday — Individual Tasks Completed & Time
+                    </label>
+                    <span className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
+                      <CornerDownLeft className="w-3 h-3 text-slate-400" /> Press [Enter] for next row
+                    </span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => addPointRow('yesterday')}
@@ -720,10 +798,12 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                     <div key={p.id} className="flex items-center gap-2">
                       <span className="text-slate-500 text-xs font-bold w-4 text-right">{idx + 1}.</span>
                       <input
+                        id={`yesterday-input-${p.id}`}
                         type="text"
-                        placeholder="Task description (e.g. Created OAuth2 login UI)"
+                        placeholder="Task description (e.g. Created OAuth2 login UI) — press Enter to add next task"
                         value={p.text}
                         onChange={(e) => updatePointRow('yesterday', p.id, 'text', e.target.value)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'yesterday', idx)}
                         className="glass-input flex-1 px-3 py-2 rounded-xl text-xs"
                       />
                       <input
@@ -733,6 +813,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                         placeholder="Hours (e.g. 3.5)"
                         value={p.hours}
                         onChange={(e) => updatePointRow('yesterday', p.id, 'hours', e.target.value)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'yesterday', idx)}
                         className="glass-input w-28 px-3 py-2 rounded-xl text-xs text-emerald-400 font-semibold"
                         title="Hours spent on this specific task"
                       />
@@ -753,9 +834,14 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
               {/* Today Itemized Points */}
               <div className="space-y-2 pt-2 border-t border-slate-800">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold uppercase text-emerald-400">
-                    Today — Individual Tasks Planned & Estimated Time
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-xs font-semibold uppercase text-emerald-400">
+                      Today — Individual Tasks Planned & Estimated Time
+                    </label>
+                    <span className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
+                      <CornerDownLeft className="w-3 h-3 text-slate-400" /> Press [Enter] for next row
+                    </span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => addPointRow('today')}
@@ -770,10 +856,12 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                     <div key={p.id} className="flex items-center gap-2">
                       <span className="text-slate-500 text-xs font-bold w-4 text-right">{idx + 1}.</span>
                       <input
+                        id={`today-input-${p.id}`}
                         type="text"
-                        placeholder="Planned task (e.g. Implement refresh tokens)"
+                        placeholder="Planned task (e.g. Implement refresh tokens) — press Enter to add next task"
                         value={p.text}
                         onChange={(e) => updatePointRow('today', p.id, 'text', e.target.value)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'today', idx)}
                         className="glass-input flex-1 px-3 py-2 rounded-xl text-xs"
                       />
                       <input
@@ -783,6 +871,7 @@ const StandupsTab = ({ featureId, featureTitle, people }: StandupsTabProps) => {
                         placeholder="Hours (e.g. 2.5)"
                         value={p.hours}
                         onChange={(e) => updatePointRow('today', p.id, 'hours', e.target.value)}
+                        onKeyDown={(e) => handleKeyDownAddRow(e, 'today', idx)}
                         className="glass-input w-28 px-3 py-2 rounded-xl text-xs text-sky-400 font-semibold"
                         title="Estimated hours for this planned task"
                       />
